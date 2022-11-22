@@ -8,6 +8,7 @@ import edu.coursera.concurrent.boruvka.Component;
 import java.util.Queue;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A parallel implementation of Boruvka's algorithm to compute a Minimum
@@ -27,19 +28,59 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
      */
     @Override
     public void computeBoruvka(final Queue<ParComponent> nodesLoaded,
-            final SolutionToBoruvka<ParComponent> solution) {
-        throw new UnsupportedOperationException();
+                               final SolutionToBoruvka<ParComponent> solution) {
+        ParComponent component;
+        // работаем в цикле пока head очереди nodesLoaded не нель
+        while ((component = nodesLoaded.poll()) != null) {
+            if (!component.lock.tryLock())
+                continue;
+            if (component.isDead) {
+                component.lock.unlock();
+                continue; // продолжаем если loopNode была уже за мерджина
+            }
+
+            // получаем loopNode's с минимальным весом
+            Edge<ParComponent> minEdge = component.getMinEdge();
+            if (minEdge == null)
+                break; // выходим из цикла, новый граф уже был построен
+
+            // ищем другой loopNode's с минимальным весом
+            ParComponent other = minEdge.getOther(component);
+            if (!other.lock.tryLock()) {
+                component.lock.unlock();
+                nodesLoaded.add(component); // добаевляем его в очередь
+                continue;
+            }
+            if (other.isDead) {
+                other.lock.unlock();
+                component.lock.unlock();
+                nodesLoaded.add(component); // добаевляем его в очередь
+                continue;
+            }
+            other.isDead = true;
+            // мерджим узел в другой узел
+            component.merge(other, minEdge.weight());
+            component.lock.unlock();
+            other.lock.unlock();
+            // добавляем новый узел в очередь
+            nodesLoaded.add(component);
+        }
+        // устанавливаем итоговый результат
+
+        solution.setSolution(component);
     }
 
     /**
-     * ParComponent represents a single component in the graph. A component may
-     * be a singleton representing a single node in the graph, or may be the
-     * result of collapsing edges to form a component from multiple nodes.
+     * ParComponent представляет один компонент на графике. Компонент может
+     * быть singleton, представляющим один узел в графе, или может быть
+     * результатом схлопывания ребер для формирования компонента из нескольких узлов.
      */
     public static final class ParComponent extends Component<ParComponent> {
+        public final ReentrantLock lock = new ReentrantLock(); // создаем экземпляр ReentrantLock для использования его интерфейса и методов
+
         /**
-         *  A unique identifier for this component in the graph that contains
-         *  it.
+         * A unique identifier for this component in the graph that contains
+         * it.
          */
         public final int nodeId;
 
@@ -103,7 +144,7 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
 
         /**
          * {@inheritDoc}
-         *
+         * <p>
          * Edge is inserted in weight order, from least to greatest.
          */
         public void addEdge(final Edge<ParComponent> e) {
@@ -133,7 +174,7 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
          * Merge two components together, connected by an edge with weight
          * edgeWeight.
          *
-         * @param other The other component to merge into this component.
+         * @param other      The other component to merge into this component.
          * @param edgeWeight Weight of the edge connecting these components.
          */
         public void merge(final ParComponent other, final double edgeWeight) {
@@ -148,9 +189,9 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
                 while (i < edges.size()) {
                     final Edge<ParComponent> e = edges.get(i);
                     if ((e.fromComponent() != this
-                                && e.fromComponent() != other)
+                            && e.fromComponent() != other)
                             || (e.toComponent() != this
-                                && e.toComponent() != other)) {
+                            && e.toComponent() != other)) {
                         break;
                     }
                     i++;
@@ -158,19 +199,19 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
                 while (j < other.edges.size()) {
                     final Edge<ParComponent> e = other.edges.get(j);
                     if ((e.fromComponent() != this
-                                && e.fromComponent() != other)
+                            && e.fromComponent() != other)
                             || (e.toComponent() != this
-                                && e.toComponent() != other)) {
+                            && e.toComponent() != other)) {
                         break;
                     }
                     j++;
                 }
 
                 if (j < other.edges.size() && (i >= edges.size()
-                            || edges.get(i).weight()
-                            > other.edges.get(j).weight())) {
+                        || edges.get(i).weight()
+                        > other.edges.get(j).weight())) {
                     newEdges.add(other.edges.get(j++).replaceComponent(other,
-                                this));
+                            this));
                 } else if (i < edges.size()) {
                     newEdges.add(edges.get(i++).replaceComponent(other, this));
                 }
@@ -236,11 +277,11 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
          * Constructor.
          *
          * @param from From edge.
-         * @param to To edges.
-         * @param w Weight of this edge.
+         * @param to   To edges.
+         * @param w    Weight of this edge.
          */
         public ParEdge(final ParComponent from, final ParComponent to,
-                final double w) {
+                       final double w) {
             fromComponent = from;
             toComponent = to;
             weight = w;
@@ -293,20 +334,14 @@ public final class ParBoruvka extends AbstractBoruvka<ParBoruvka.ParComponent> {
          */
         @Override
         public int compareTo(final Edge e) {
-            if (e.weight() == weight) {
-                return 0;
-            } else if (weight < e.weight()) {
-                return -1;
-            } else {
-                return 1;
-            }
+            return Double.compare(weight, e.weight()); // сравниваем через метод .compare weight, e.weight() как Double
         }
 
         /**
          * {@inheritDoc}
          */
         public ParEdge replaceComponent(final ParComponent from,
-                final ParComponent to) {
+                                        final ParComponent to) {
             if (fromComponent == from) {
                 fromComponent = to;
             }
