@@ -18,7 +18,10 @@ public final class BankTransactionsUsingObjectIsolation
          * global isolation, based on the reference code provided in
          * BankTransactionsUsingGlobalIsolation. Keep in mind that isolation
          * must be applied to both src and dst.
+         * amount - atomic variable
          */
-        throw new UnsupportedOperationException();
+        isolated(src, dst, () -> {
+            src.performTransfer(amount, dst);
+        });
     }
 }
