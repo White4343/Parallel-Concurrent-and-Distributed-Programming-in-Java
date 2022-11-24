@@ -13,8 +13,8 @@ public final class FileServer {
      * Main entrypoint for the basic file server.
      *
      * @param socket Provided socket to accept connections on.
-     * @param fs A proxy filesystem to serve files from. See the PCDPFilesystem
-     *           class for more detailed documentation of its usage.
+     * @param fs     A proxy filesystem to serve files from. See the PCDPFilesystem
+     *               class for more detailed documentation of its usage.
      * @throws IOException If an I/O error is detected on the server. This
      *                     should be a fatal error, your file server
      *                     implementation is not expected to ever throw
